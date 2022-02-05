@@ -13,13 +13,11 @@ fn main() {
     let sentence = argv[1].clone();
     let term = argv[2].clone();
 
-    let pos = match imser::search_main(&sentence, &term) {
-        None => {
-            eprintln!("term not found: {}", &term);
-            process::exit(1);
-        }
-        Some(pos) => pos,
-    };
+    let positions = imser::search_main(&sentence, &term);
+    if positions.len() == 0 {
+        eprintln!("term not found: {}", &term);
+        process::exit(1);
+    }
 
-    println!("{}", pos);
+    println!("{:?}", positions);
 }
