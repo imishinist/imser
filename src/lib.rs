@@ -66,14 +66,14 @@ impl PostingList {
     }
 }
 
-fn tokenize(sentence: &String) -> Vec<Token> {
+fn tokenize(sentence: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
 
     let mut term = String::new();
     let mut base = 0;
     for c in sentence.chars() {
         if c.is_whitespace() {
-            if term.len() != 0 {
+            if !term.is_empty() {
                 tokens.push(Token::new_term(term.as_str(), base - term.len()));
                 term.clear();
             }
@@ -96,14 +96,14 @@ fn tokenize(sentence: &String) -> Vec<Token> {
         base += 1;
         term.push(c);
     }
-    if term.len() != 0 {
+    if !term.is_empty() {
         tokens.push(Token::new_term(term.as_str(), base - term.len()));
     }
 
     tokens
 }
 
-fn gen_positional_index(sentence: &String) -> PositionalIndex {
+fn gen_positional_index(sentence: &str) -> PositionalIndex {
     let mut index = PositionalIndex::new();
 
     let tokens = tokenize(sentence);
@@ -119,10 +119,10 @@ fn gen_positional_index(sentence: &String) -> PositionalIndex {
     index
 }
 
-pub fn search_term(sentence: &String, term: &Term) -> Vec<usize> {
+pub fn search_term(sentence: &str, term: &Term) -> Vec<usize> {
     let index = gen_positional_index(sentence);
 
-    let posting_list = match index.postings.get(term) {
+    let posting_list = match index.postings.get(term.as_str()) {
         None => return vec![],
         Some(posting_list) => posting_list,
     };
@@ -130,7 +130,7 @@ pub fn search_term(sentence: &String, term: &Term) -> Vec<usize> {
     posting_list.positions.clone()
 }
 
-pub fn search_main(sentences: &[String], term: &String) -> Vec<Vec<usize>> {
+pub fn search_main(sentences: &[String], term: &Term) -> Vec<Vec<usize>> {
     let mut positions_per_sentences = Vec::new();
     for sentence in sentences {
         positions_per_sentences.push(search_term(sentence, term));

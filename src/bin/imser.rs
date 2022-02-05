@@ -15,7 +15,7 @@ fn main() {
 
     let positions_per_sentence = imser::search_main(sentences, &term);
     for positions in positions_per_sentence {
-        if positions.len() == 0 {
+        if positions.is_empty() {
             eprintln!("term not found: {}", &term);
             continue;
         }
