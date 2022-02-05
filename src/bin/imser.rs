@@ -5,19 +5,20 @@ use std::process;
 
 fn main() {
     let argv: Vec<String> = env::args().collect();
-    if argv.len() != 3 {
+    if argv.len() < 3 {
         eprintln!("invalid arguments");
         process::exit(1);
     }
 
-    let sentence = argv[1].clone();
-    let term = argv[2].clone();
+    let term = argv[1].clone();
+    let sentences = &argv[2..];
 
-    let positions = imser::search_main(&sentence, &term);
-    if positions.len() == 0 {
-        eprintln!("term not found: {}", &term);
-        process::exit(1);
+    let positions_per_sentence = imser::search_main(sentences, &term);
+    for positions in positions_per_sentence {
+        if positions.len() == 0 {
+            eprintln!("term not found: {}", &term);
+            continue;
+        }
+        println!("{:?}", positions);
     }
-
-    println!("{:?}", positions);
 }

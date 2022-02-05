@@ -5,21 +5,22 @@ cargo test
 
 assert() {
     expected=$1
-    arg1=$2
-    arg2=$3
+    term=$2
+    shift; shift;
+    sentences=$@
 
-    actual=$(./target/debug/imser "$arg1" "$arg2" 2>&1)
+    actual=$(./target/debug/imser "$term" "$sentences" 2>&1)
 
     if [ "$expected" = "$actual" ]; then
-        echo "search \"$arg2\" from \"$arg1\" => $actual"
+        echo "search \"$term\" from \"$sentences\" => $actual"
     else
-        echo "search \"$arg2\" from \"$arg1\" => $expected, but got \"$actual\""
+        echo "search \"$term\" from \"$sentences\" => $expected, but got \"$actual\""
         exit 1
     fi
 }
 
-assert "[5]" "I am Taisuke" "Taisuke"
-assert "[0, 5, 16, 21, 43]" "that that is is that that is not is not is that it it is" "that"
-assert "term not found: foo" "This is a pen" "foo"
+assert "[5]" "Taisuke" "I am Taisuke" 
+assert "[0, 5, 16, 21, 43]" "that" "that that is is that that is not is not is that it it is"
+assert "term not found: foo" "foo" "This is a pen"
 
 echo OK
