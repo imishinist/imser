@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Debug, PartialEq)]
 enum TokenKind {
     Term(String),
@@ -23,6 +25,44 @@ impl Token {
             kind: TokenKind::Punct(punct.to_string()),
             loc,
         }
+    }
+}
+
+type Term = String;
+
+#[derive(Debug)]
+struct PositionalIndex {
+    postings: HashMap<Term, PostingList>,
+}
+
+impl PositionalIndex {
+    fn new() -> Self {
+        PositionalIndex {
+            postings: HashMap::new(),
+        }
+    }
+
+    fn push_position(&mut self, term: Term, position: usize) {
+        let posting_list = self.postings.entry(term).or_insert_with(PostingList::new);
+
+        posting_list.push(position);
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct PostingList {
+    positions: Vec<usize>,
+}
+
+impl PostingList {
+    fn new() -> Self {
+        Self {
+            positions: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, position: usize) {
+        self.positions.push(position);
     }
 }
 
@@ -63,19 +103,31 @@ fn tokenize(sentence: &String) -> Vec<Token> {
     tokens
 }
 
-pub fn search_term(sentence: &String, term: &String) -> Vec<usize> {
-    let tokens = tokenize(sentence);
-    let mut positions = Vec::new();
+fn gen_positional_index(sentence: &String) -> PositionalIndex {
+    let mut index = PositionalIndex::new();
 
+    let tokens = tokenize(sentence);
     for token in tokens {
         match token.kind {
-            TokenKind::Term(t) if &t == term => {
-                positions.push(token.loc);
+            TokenKind::Term(t) => {
+                index.push_position(t, token.loc);
             }
             _ => continue,
         }
     }
-    positions
+
+    index
+}
+
+pub fn search_term(sentence: &String, term: &Term) -> Vec<usize> {
+    let index = gen_positional_index(sentence);
+
+    let posting_list = match index.postings.get(term) {
+        None => return vec![],
+        Some(posting_list) => posting_list,
+    };
+
+    posting_list.positions.clone()
 }
 
 pub fn search_main(sentences: &[String], term: &String) -> Vec<Vec<usize>> {
