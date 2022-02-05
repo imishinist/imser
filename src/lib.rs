@@ -28,6 +28,23 @@ impl Token {
     }
 }
 
+#[macro_export]
+macro_rules! doc {
+    ($x:expr) => {
+        crate::Document::new($x.to_string())
+    };
+}
+
+pub struct Document {
+    body: String,
+}
+
+impl Document {
+    pub fn new(body: String) -> Self {
+        Self { body }
+    }
+}
+
 type Term = String;
 
 #[derive(Debug)]
@@ -119,8 +136,8 @@ fn gen_positional_index(sentence: &str) -> PositionalIndex {
     index
 }
 
-pub fn search_term(sentence: &str, term: &Term) -> Vec<usize> {
-    let index = gen_positional_index(sentence);
+pub fn search_term(doc: &Document, term: &Term) -> Vec<usize> {
+    let index = gen_positional_index(doc.body.as_str());
 
     let posting_list = match index.postings.get(term.as_str()) {
         None => return vec![],
@@ -130,10 +147,10 @@ pub fn search_term(sentence: &str, term: &Term) -> Vec<usize> {
     posting_list.positions.clone()
 }
 
-pub fn search_main(sentences: &[String], term: &Term) -> Vec<Vec<usize>> {
+pub fn search_main(docs: &[Document], term: &Term) -> Vec<Vec<usize>> {
     let mut positions_per_sentences = Vec::new();
-    for sentence in sentences {
-        positions_per_sentences.push(search_term(sentence, term));
+    for doc in docs {
+        positions_per_sentences.push(search_term(doc, term));
     }
     positions_per_sentences
 }
@@ -195,24 +212,27 @@ mod tests {
 
     #[test]
     fn search_term_test() {
-        let sentence = "I am Taisuke".to_string();
         let term = "Taisuke".to_string();
-        assert_eq!(search_term(&sentence, &term), vec![5]);
+        assert_eq!(search_term(&doc!("I am Taisuke"), &term), vec![5]);
 
-        let sentence = "that that is is that that is not is not is that it it is".to_string();
         let term = "that".to_string();
-        assert_eq!(search_term(&sentence, &term), vec![0, 5, 16, 21, 43]);
+        assert_eq!(
+            search_term(
+                &doc!("that that is is that that is not is not is that it it is"),
+                &term
+            ),
+            vec![0, 5, 16, 21, 43]
+        );
 
-        let sentence = "I am Taisuke".to_string();
         let term = "foo".to_string();
-        assert_eq!(search_term(&sentence, &term), vec![]);
+        assert_eq!(search_term(&doc!("I am Taisuke"), &term), vec![]);
     }
 
     #[test]
     fn search_main_test() {
         let sentences = vec![
-            "I am Taisuke".to_string(),
-            "that that is is that that is not is not is that it it is".to_string(),
+            doc!("I am Taisuke"),
+            doc!("that that is is that that is not is not is that it it is"),
         ];
         let term = "Taisuke".to_string();
         assert_eq!(search_main(&sentences, &term), vec![vec![5], vec![]]);
