@@ -16,16 +16,15 @@ fn main() {
     let sentences = &argv[2..];
 
     let mut docs = Vec::new();
-    for sentence in sentences {
-        docs.push(doc!(sentence.as_str()));
+    for (id, sentence) in sentences.iter().enumerate() {
+        docs.push(doc!(sentence.as_str(), id));
     }
 
     let positions_per_sentence = imser::search_main(&docs, &term);
-    for positions in positions_per_sentence {
-        if positions.is_empty() {
-            eprintln!("term not found: {}", &term);
-            continue;
-        }
+    if positions_per_sentence.is_empty() {
+        eprintln!("term not found: {}", &term);
+    }
+    for (_, positions) in positions_per_sentence {
         println!("{:?}", positions);
     }
 }
