@@ -1,7 +1,24 @@
 #!/bin/bash
 
+echo "+cargo build ===================="
 cargo build
+echo "================================="
+
+echo "+cargo test ====================="
 cargo test
+echo "================================="
+
+echo "+cargo check ===================="
+cargo check
+echo "================================="
+
+echo "+cargo clippy -- -D warnings ===="
+cargo clippy -- -D warnings
+echo "================================="
+
+echo "+cargo fmt -- --check ==========="
+cargo fmt -- --check
+echo "================================="
 
 assert() {
     expected=$1

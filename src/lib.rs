@@ -13,6 +13,9 @@ pub struct Token {
     // offset to the beginning of the word
     offset: usize,
 
+    // length of token
+    length: usize,
+
     // position of the word in the sentence
     position: usize,
 }
@@ -22,6 +25,7 @@ impl Token {
         Self {
             kind: TokenKind::Term(term.to_string()),
             offset,
+            length: term.len(),
             position,
         }
     }
@@ -30,6 +34,7 @@ impl Token {
         Self {
             kind: TokenKind::Punct(punct.to_string()),
             offset,
+            length: punct.len(),
             position,
         }
     }
