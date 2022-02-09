@@ -9,21 +9,28 @@ enum TokenKind {
 #[derive(Debug, PartialEq)]
 pub struct Token {
     kind: TokenKind,
-    loc: usize,
+
+    // offset to the beginning of the word
+    offset: usize,
+
+    // position of the word in the sentence
+    position: usize,
 }
 
 impl Token {
-    fn new_term(term: &str, loc: usize) -> Self {
+    fn new_term(term: &str, offset: usize, position: usize) -> Self {
         Self {
             kind: TokenKind::Term(term.to_string()),
-            loc,
+            offset,
+            position,
         }
     }
 
-    fn new_punct(punct: &str, loc: usize) -> Self {
+    fn new_punct(punct: &str, offset: usize, position: usize) -> Self {
         Self {
             kind: TokenKind::Punct(punct.to_string()),
-            loc,
+            offset,
+            position,
         }
     }
 }
@@ -33,24 +40,36 @@ fn tokenize(sentence: &str) -> Vec<Token> {
 
     let mut term = String::new();
     let mut base = 0;
+    let mut word_count = 0;
     for c in sentence.chars() {
         if c.is_whitespace() {
             if !term.is_empty() {
-                tokens.push(Token::new_term(term.as_str(), base - term.len()));
+                tokens.push(Token::new_term(
+                    term.as_str(),
+                    base - term.len(),
+                    word_count,
+                ));
                 term.clear();
+                word_count += 1;
             }
 
             base += 1;
             continue;
         }
         if c.is_ascii_punctuation() {
-            tokens.push(Token::new_term(term.as_str(), base - term.len()));
+            tokens.push(Token::new_term(
+                term.as_str(),
+                base - term.len(),
+                word_count,
+            ));
             term.clear();
+            word_count += 1;
 
             term.push(c);
-            tokens.push(Token::new_punct(term.as_str(), base));
-
+            tokens.push(Token::new_punct(term.as_str(), base, word_count));
             term.clear();
+            word_count += 1;
+
             base += 1;
             continue;
         }
@@ -59,7 +78,11 @@ fn tokenize(sentence: &str) -> Vec<Token> {
         term.push(c);
     }
     if !term.is_empty() {
-        tokens.push(Token::new_term(term.as_str(), base - term.len()));
+        tokens.push(Token::new_term(
+            term.as_str(),
+            base - term.len(),
+            word_count,
+        ));
     }
 
     tokens
@@ -197,7 +220,9 @@ impl IndexWriter {
             match token.kind {
                 TokenKind::Term(t) => {
                     let index = self.term_dict.add_term(t);
-                    data.entry(index).or_insert_with(Vec::new).push(token.loc);
+                    data.entry(index)
+                        .or_insert_with(Vec::new)
+                        .push(token.offset);
                 }
                 _ => continue,
             }
@@ -337,9 +362,9 @@ mod tests {
         assert_eq!(
             tokenize(&sentence),
             vec![
-                Token::new_term("I", 0),
-                Token::new_term("am", 2),
-                Token::new_term("Taisuke", 6),
+                Token::new_term("I", 0, 0),
+                Token::new_term("am", 2, 1),
+                Token::new_term("Taisuke", 6, 2),
             ]
         );
 
@@ -347,10 +372,10 @@ mod tests {
         assert_eq!(
             tokenize(&sentence),
             vec![
-                Token::new_term("I", 0),
-                Token::new_term("am", 2),
-                Token::new_term("Taisuke", 5),
-                Token::new_punct(".", 12),
+                Token::new_term("I", 0, 0),
+                Token::new_term("am", 2, 1),
+                Token::new_term("Taisuke", 5, 2),
+                Token::new_punct(".", 12, 3),
             ]
         );
 
@@ -358,10 +383,10 @@ mod tests {
         assert_eq!(
             tokenize(&sentence),
             vec![
-                Token::new_term("What", 0),
-                Token::new_term("is", 5),
-                Token::new_term("that", 8),
-                Token::new_punct("?", 12),
+                Token::new_term("What", 0, 0),
+                Token::new_term("is", 5, 1),
+                Token::new_term("that", 8, 2),
+                Token::new_punct("?", 12, 3),
             ]
         );
 
@@ -369,11 +394,11 @@ mod tests {
         assert_eq!(
             tokenize(&sentence),
             vec![
-                Token::new_term("What", 0),
-                Token::new_punct("'", 4),
-                Token::new_term("s", 5),
-                Token::new_term("that", 7),
-                Token::new_punct("?", 11),
+                Token::new_term("What", 0, 0),
+                Token::new_punct("'", 4, 1),
+                Token::new_term("s", 5, 2),
+                Token::new_term("that", 7, 3),
+                Token::new_punct("?", 11, 4),
             ]
         );
     }
