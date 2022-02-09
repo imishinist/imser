@@ -136,13 +136,46 @@ struct PostingData {
     positions: Vec<usize>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
+struct TermDict {
+    term2idx: HashMap<Term, usize>,
+    idx2term: HashMap<usize, Term>,
+    len: usize,
+}
+
+impl TermDict {
+    fn new() -> Self {
+        Self {
+            term2idx: HashMap::new(),
+            idx2term: HashMap::new(),
+            len: 0,
+        }
+    }
+
+    fn add_term<T: Into<String>>(&mut self, term: T) -> usize {
+        let term = term.into();
+        let index = self.term2idx.entry(term.clone()).or_insert_with(|| {
+            let len = self.len;
+            self.len += 1;
+            len
+        });
+        self.idx2term.entry(*index).or_insert_with(|| term.clone());
+        *index
+    }
+
+    fn term(&self, idx: usize) -> Option<&Term> {
+        self.idx2term.get(&idx)
+    }
+
+    #[allow(dead_code)]
+    fn index(&self, term: &Term) -> Option<usize> {
+        self.term2idx.get(term).copied()
+    }
+}
+
+#[derive(Debug)]
 struct IndexWriter {
-    // term => index mapping
-    dict: HashMap<Term, usize>,
-    // index => term mapping
-    reversed_dict: HashMap<usize, Term>,
-    dict_len: usize,
+    term_dict: TermDict,
 
     // (doc_id, dict_index, positions)
     term_positions: Vec<(usize, usize, Vec<usize>)>,
@@ -151,9 +184,7 @@ struct IndexWriter {
 impl IndexWriter {
     fn new() -> Self {
         Self {
-            dict: HashMap::new(),
-            reversed_dict: HashMap::new(),
-            dict_len: 0,
+            term_dict: TermDict::new(),
             term_positions: Vec::new(),
         }
     }
@@ -165,15 +196,8 @@ impl IndexWriter {
         for token in tokens {
             match token.kind {
                 TokenKind::Term(t) => {
-                    let index = self.dict.entry(t.clone()).or_insert_with(|| {
-                        let len = self.dict_len;
-                        self.dict_len += 1;
-                        len
-                    });
-                    self.reversed_dict
-                        .entry(*index)
-                        .or_insert_with(|| t.clone());
-                    data.entry(*index).or_insert_with(Vec::new).push(token.loc);
+                    let index = self.term_dict.add_term(t);
+                    data.entry(index).or_insert_with(Vec::new).push(token.loc);
                 }
                 _ => continue,
             }
@@ -186,7 +210,7 @@ impl IndexWriter {
     fn build(self) -> PositionalIndex {
         let mut index = PositionalIndex::new();
         for (doc_id, idx, positions) in self.term_positions {
-            let term = self.reversed_dict.get(&idx).unwrap();
+            let term = self.term_dict.term(idx).unwrap();
             index.push_posting(term.clone(), PostingData { doc_id, positions });
         }
 
@@ -219,7 +243,7 @@ pub fn search_main(docs: &[Document], term: &Term) -> HashMap<usize, Vec<usize>>
 
 #[cfg(test)]
 mod tests {
-    use crate::{search_main, search_term, tokenize, IndexWriter, Token};
+    use crate::{search_main, search_term, tokenize, IndexWriter, TermDict, Token};
 
     macro_rules! map (
         () => {
@@ -261,6 +285,26 @@ mod tests {
             }
         };
     );
+
+    #[test]
+    fn term_dict_test() {
+        let mut term_dict = TermDict::new();
+
+        assert_eq!(term_dict.add_term("This"), 0);
+        assert_eq!(term_dict.add_term("is"), 1);
+        assert_eq!(term_dict.add_term("a"), 2);
+        assert_eq!(term_dict.add_term("pen"), 3);
+
+        let term = "This".to_string();
+        assert_eq!(term_dict.index(&term), Some(0));
+        assert_eq!(term_dict.term(0), Some(&term));
+        let term = "is".to_string();
+        assert_eq!(term_dict.index(&term), Some(1));
+        assert_eq!(term_dict.term(1), Some(&term));
+        let term = "pen".to_string();
+        assert_eq!(term_dict.index(&term), Some(3));
+        assert_eq!(term_dict.term(3), Some(&term));
+    }
 
     #[test]
     fn indexing_test() {
