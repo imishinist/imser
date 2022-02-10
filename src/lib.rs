@@ -227,7 +227,7 @@ impl IndexWriter {
                     let index = self.term_dict.add_term(t);
                     data.entry(index)
                         .or_insert_with(Vec::new)
-                        .push(token.offset);
+                        .push(token.position);
                 }
                 _ => continue,
             }
@@ -252,20 +252,16 @@ impl IndexWriter {
     }
 }
 
-fn search_term(index: &PositionalIndex, term: &Term) -> HashMap<usize, Vec<usize>> {
+fn search_term(index: &PositionalIndex, term: &Term) -> Vec<usize> {
     let posting_list = match index.postings.get(term.as_str()) {
-        None => return HashMap::new(),
+        None => return Vec::new(),
         Some(posting_list) => posting_list,
     };
 
-    let mut result = HashMap::new();
-    for posting in posting_list.postings.iter() {
-        result.insert(posting.doc_id, posting.positions.clone());
-    }
-    result
+    posting_list.postings.iter().map(|p| p.doc_id).collect()
 }
 
-pub fn search_main(docs: &[Document], term: &Term) -> HashMap<usize, Vec<usize>> {
+pub fn search_main(docs: &[Document], term: &Term) -> Vec<usize> {
     let mut index_writer = IndexWriter::new();
     for doc in docs {
         index_writer.write(doc);
@@ -277,9 +273,9 @@ pub fn search_main(docs: &[Document], term: &Term) -> HashMap<usize, Vec<usize>>
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use crate::{search_main, search_term, tokenize, IndexWriter, TermDict, Token};
 
+    #[allow(unused_macros)]
     macro_rules! map (
         () => {
             std::collections::HashMap::new()
@@ -353,13 +349,13 @@ mod tests {
 
         let index = index! {
             "I" => posting! { 1 => vec![0] },
-            "am" => posting! { 1 => vec![2] },
-            "Taisuke" => posting! { 1 => vec![5] },
-            "this" => posting! { 0 => vec![8] },
-            "that" => posting! { 2 => vec![0, 5, 16, 21, 43] },
-            "is" => posting! { 0 => vec![5], 2 => vec![10, 13, 26, 33, 40, 54] },
-            "not" => posting! { 2 => vec![29, 36] },
-            "it" => posting! { 2 => vec![48, 51] },
+            "am" => posting! { 1 => vec![1] },
+            "Taisuke" => posting! { 1 => vec![2] },
+            "this" => posting! { 0 => vec![2] },
+            "that" => posting! { 2 => vec![0, 1, 4, 5, 11] },
+            "is" => posting! { 0 => vec![1], 2 => vec![2, 3, 6, 8, 10, 14] },
+            "not" => posting! { 2 => vec![7, 9] },
+            "it" => posting! { 2 => vec![12, 13] },
             "What" => posting! { 0 => vec![0] },
         };
         assert_eq!(index_writer.build(), index);
@@ -427,16 +423,13 @@ mod tests {
         let index = iw.build();
 
         let term = "Taisuke".to_string();
-        assert_eq!(search_term(&index, &term), map! { 1usize => vec![5] });
+        assert_eq!(search_term(&index, &term), vec![1]);
 
         let term = "that".to_string();
-        assert_eq!(
-            search_term(&index, &term),
-            map! { 2usize => vec![0, 5, 16, 21, 43] },
-        );
+        assert_eq!(search_term(&index, &term), vec![2]);
 
         let term = "foo".to_string();
-        assert_eq!(search_term(&index, &term), map! {});
+        assert_eq!(search_term(&index, &term), vec![]);
     }
 
     #[test]
@@ -449,15 +442,12 @@ mod tests {
             ),
         ];
         let term = "Taisuke".to_string();
-        assert_eq!(search_main(&sentences, &term), map! { 1usize => vec![5] });
+        assert_eq!(search_main(&sentences, &term), vec![1]);
 
         let term = "that".to_string();
-        assert_eq!(
-            search_main(&sentences, &term),
-            map! { 2usize => vec![0, 5, 16, 21, 43] }
-        );
+        assert_eq!(search_main(&sentences, &term), vec![2]);
 
         let term = "foo".to_string();
-        assert_eq!(search_main(&sentences, &term), map! {});
+        assert_eq!(search_main(&sentences, &term), vec![]);
     }
 }

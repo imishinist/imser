@@ -20,11 +20,11 @@ fn main() {
         docs.push(doc!(sentence.as_str(), id));
     }
 
-    let positions_per_sentence = imser::search_main(&docs, &term);
-    if positions_per_sentence.is_empty() {
+    let doc_ids = imser::search_main(&docs, &term);
+    if doc_ids.is_empty() {
         eprintln!("term not found: {}", &term);
     }
-    for (_, positions) in positions_per_sentence {
-        println!("{:?}", positions);
+    for doc_id in doc_ids {
+        println!("{:?}", doc_id);
     }
 }

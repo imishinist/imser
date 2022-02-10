@@ -36,8 +36,8 @@ assert() {
     fi
 }
 
-assert "[5]" "Taisuke" "I am Taisuke" 
-assert "[0, 5, 16, 21, 43]" "that" "that that is is that that is not is not is that it it is"
+assert "0" "Taisuke" "I am Taisuke" 
+assert "0" "that" "that that is is that that is not is not is that it it is"
 assert "term not found: foo" "foo" "This is a pen"
 
 echo OK
