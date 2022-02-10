@@ -237,8 +237,12 @@ impl IndexWriter {
         }
     }
 
-    fn build(self) -> PositionalIndex {
+    fn build(mut self) -> PositionalIndex {
         let mut index = PositionalIndex::new();
+
+        // Note: document id should be sorted.
+        self.term_positions.sort();
+
         for (doc_id, idx, positions) in self.term_positions {
             let term = self.term_dict.term(idx).unwrap();
             index.push_posting(term.clone(), PostingData { doc_id, positions });
@@ -273,13 +277,14 @@ pub fn search_main(docs: &[Document], term: &Term) -> HashMap<usize, Vec<usize>>
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use crate::{search_main, search_term, tokenize, IndexWriter, TermDict, Token};
 
     macro_rules! map (
         () => {
             std::collections::HashMap::new()
         };
-        { $($key:expr => $val:expr),+ } => {
+        { $($key:expr => $val:expr),* $(,)? } => {
             {
                 let mut h = std::collections::HashMap::new();
                 $(
@@ -290,7 +295,7 @@ mod tests {
         };
     );
     macro_rules! index (
-        { $($key:expr => $val:expr),+ } => {
+        { $($key:expr => $val:expr),* $(,)? } => {
             {
                 let mut postings = std::collections::HashMap::new();
                 $(
@@ -304,7 +309,7 @@ mod tests {
         () => {
             $crate::PostingList::new()
         };
-        { $($key:expr => $value:expr),+ } => {
+        { $($key:expr => $value:expr),* $(,)? } => {
             {
                 let mut posting_list = $crate::PostingList::new();
                 $(
@@ -344,15 +349,18 @@ mod tests {
             "that that is is that that is not is not is that it it is",
             2
         ));
+        index_writer.write(&doc!("What is this", 0));
 
         let index = index! {
             "I" => posting! { 1 => vec![0] },
             "am" => posting! { 1 => vec![2] },
             "Taisuke" => posting! { 1 => vec![5] },
+            "this" => posting! { 0 => vec![8] },
             "that" => posting! { 2 => vec![0, 5, 16, 21, 43] },
-            "is" => posting! { 2 => vec![10, 13, 26, 33, 40, 54] },
+            "is" => posting! { 0 => vec![5], 2 => vec![10, 13, 26, 33, 40, 54] },
             "not" => posting! { 2 => vec![29, 36] },
-            "it" => posting! { 2 => vec![48, 51] }
+            "it" => posting! { 2 => vec![48, 51] },
+            "What" => posting! { 0 => vec![0] },
         };
         assert_eq!(index_writer.build(), index);
     }
