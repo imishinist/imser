@@ -93,19 +93,14 @@ fn tokenize(sentence: &str) -> Vec<Token> {
     tokens
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Document {
-    id: usize,
-    body: String,
+    pub body: String,
 }
 
 impl Document {
     pub fn new(body: String) -> Self {
-        Self { id: 0, body }
-    }
-
-    fn set_id(&mut self, id: usize) {
-        self.id = id;
+        Self { body }
     }
 }
 
@@ -121,12 +116,14 @@ type Term = String;
 #[derive(Debug, PartialEq)]
 struct PositionalIndex {
     postings: HashMap<Term, PostingList>,
+    stored: HashMap<usize, Document>,
 }
 
 impl PositionalIndex {
     fn new() -> Self {
         PositionalIndex {
             postings: HashMap::new(),
+            stored: HashMap::new(),
         }
     }
 
@@ -134,6 +131,14 @@ impl PositionalIndex {
         let posting_list = self.postings.entry(term).or_insert_with(PostingList::new);
 
         posting_list.push(posting);
+    }
+
+    fn store_document(&mut self, id: usize, doc: Document) {
+        self.stored.insert(id, doc);
+    }
+
+    fn doc(&self, id: usize) -> Option<&Document> {
+        self.stored.get(&id)
     }
 }
 
@@ -205,6 +210,9 @@ struct IndexWriter {
 
     // (doc_id, dict_index, positions)
     term_positions: Vec<(usize, usize, Vec<usize>)>,
+
+    // (doc_id, Document)
+    stored: Vec<(usize, Document)>,
 }
 
 impl IndexWriter {
@@ -213,14 +221,18 @@ impl IndexWriter {
             seq: 0,
             term_dict: TermDict::new(),
             term_positions: Vec::new(),
+            stored: Vec::new(),
         }
     }
 
-    fn write(&mut self, mut doc: Document) {
-        let doc_id = self.seq;
-        doc.set_id(doc_id);
+    fn seq_incr(&mut self) -> usize {
+        let curr = self.seq;
         self.seq += 1;
+        curr
+    }
 
+    fn write(&mut self, doc: Document) {
+        let id = self.seq_incr();
         let tokens = tokenize(doc.body.as_str());
 
         let mut data: HashMap<usize, Vec<usize>> = HashMap::new();
@@ -236,8 +248,10 @@ impl IndexWriter {
             }
         }
         for (index, positions) in data.into_iter() {
-            self.term_positions.push((doc.id, index, positions));
+            self.term_positions.push((id, index, positions));
         }
+
+        self.stored.push((id, doc));
     }
 
     fn build(self) -> PositionalIndex {
@@ -246,6 +260,10 @@ impl IndexWriter {
         for (doc_id, idx, positions) in self.term_positions {
             let term = self.term_dict.term(idx).unwrap();
             index.push_posting(term.clone(), PostingData { doc_id, positions });
+        }
+
+        for (id, doc) in self.stored {
+            index.store_document(id, doc);
         }
 
         index
@@ -261,7 +279,7 @@ fn search_term(index: &PositionalIndex, term: &Term) -> Vec<usize> {
     posting_list.postings.iter().map(|p| p.doc_id).collect()
 }
 
-pub fn search_main(docs: Vec<Document>, term: &Term) -> Vec<usize> {
+pub fn search_main(docs: Vec<Document>, term: &Term) -> Vec<Document> {
     let mut index_writer = IndexWriter::new();
     for doc in docs {
         index_writer.write(doc);
@@ -269,13 +287,15 @@ pub fn search_main(docs: Vec<Document>, term: &Term) -> Vec<usize> {
     let index = index_writer.build();
 
     search_term(&index, term)
+        .iter()
+        .map(|id| index.doc(*id).unwrap().clone())
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{search_main, search_term, tokenize, IndexWriter, TermDict, Token};
 
-    #[allow(unused_macros)]
     macro_rules! map (
         () => {
             std::collections::HashMap::new()
@@ -287,17 +307,6 @@ mod tests {
                     h.insert($key.into(), $val.into());
                 )+
                 h
-            }
-        };
-    );
-    macro_rules! index (
-        { $($key:expr => $val:expr),* $(,)? } => {
-            {
-                let mut postings = std::collections::HashMap::new();
-                $(
-                    postings.insert($key.into(), $val.into());
-                )+
-                $crate::PositionalIndex { postings }
             }
         };
     );
@@ -346,7 +355,7 @@ mod tests {
             "that that is is that that is not is not is that it it is"
         ));
 
-        let index = index! {
+        let postings = map! {
             "I" => posting! { 1 => vec![0] },
             "am" => posting! { 1 => vec![1] },
             "Taisuke" => posting! { 1 => vec![2] },
@@ -357,7 +366,19 @@ mod tests {
             "it" => posting! { 2 => vec![12, 13] },
             "What" => posting! { 0 => vec![0] },
         };
-        assert_eq!(index_writer.build(), index);
+
+        let stored = map! {
+            0usize => doc!("What is this"),
+            1usize => doc!("I am Taisuke"),
+            2usize => doc!("that that is is that that is not is not is that it it is"),
+        };
+
+        let index = index_writer.build();
+        assert_eq!(index.postings, postings);
+        assert_eq!(index.stored, stored);
+
+        assert_eq!(index.doc(100), None);
+        assert_eq!(index.doc(0), Some(&doc!("What is this")));
     }
 
     #[test]
@@ -437,10 +458,18 @@ mod tests {
             doc!("that that is is that that is not is not is that it it is"),
         ];
         let term = "Taisuke".to_string();
-        assert_eq!(search_main(sentences.clone(), &term), vec![0]);
+        assert_eq!(
+            search_main(sentences.clone(), &term),
+            vec![doc!("I am Taisuke"),]
+        );
 
         let term = "that".to_string();
-        assert_eq!(search_main(sentences.clone(), &term), vec![1]);
+        assert_eq!(
+            search_main(sentences.clone(), &term),
+            vec![doc!(
+                "that that is is that that is not is not is that it it is"
+            ),]
+        );
 
         let term = "foo".to_string();
         assert_eq!(search_main(sentences.clone(), &term), vec![]);

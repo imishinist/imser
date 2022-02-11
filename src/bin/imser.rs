@@ -16,11 +16,11 @@ fn main() {
     let sentences = &argv[2..];
 
     let docs = sentences.iter().map(|s| doc!(s.as_str())).collect();
-    let doc_ids = imser::search_main(docs, &term);
-    if doc_ids.is_empty() {
+    let docs = imser::search_main(docs, &term);
+    if docs.is_empty() {
         eprintln!("term not found: {}", &term);
     }
-    for doc_id in doc_ids {
-        println!("{:?}", doc_id);
+    for doc in docs {
+        println!("{}", doc.body);
     }
 }

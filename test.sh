@@ -36,8 +36,8 @@ assert() {
     fi
 }
 
-assert "0" "Taisuke" "I am Taisuke" 
-assert "0" "that" "that that is is that that is not is not is that it it is"
+assert "I am Taisuke" "Taisuke" "I am Taisuke"
+assert "that that is is that that is not is not is that it it is" "that" "that that is is that that is not is not is that it it is"
 assert "term not found: foo" "foo" "This is a pen"
 
 echo OK
