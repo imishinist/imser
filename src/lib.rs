@@ -93,6 +93,7 @@ fn tokenize(sentence: &str) -> Vec<Token> {
     tokens
 }
 
+#[derive(Debug, Clone)]
 pub struct Document {
     id: usize,
     body: String,
@@ -103,7 +104,7 @@ impl Document {
         Self { id: 0, body }
     }
 
-    pub fn set_id(&mut self, id: usize) {
+    fn set_id(&mut self, id: usize) {
         self.id = id;
     }
 }
@@ -113,11 +114,6 @@ macro_rules! doc {
     ($x:expr) => {
         crate::Document::new($x.to_string())
     };
-    ($x:expr, $y:expr) => {{
-        let mut doc = crate::Document::new($x.to_string());
-        doc.set_id($y);
-        doc
-    }};
 }
 
 type Term = String;
@@ -203,6 +199,8 @@ impl TermDict {
 
 #[derive(Debug)]
 struct IndexWriter {
+    seq: usize,
+
     term_dict: TermDict,
 
     // (doc_id, dict_index, positions)
@@ -212,12 +210,17 @@ struct IndexWriter {
 impl IndexWriter {
     fn new() -> Self {
         Self {
+            seq: 0,
             term_dict: TermDict::new(),
             term_positions: Vec::new(),
         }
     }
 
-    fn write(&mut self, doc: &Document) {
+    fn write(&mut self, mut doc: Document) {
+        let doc_id = self.seq;
+        doc.set_id(doc_id);
+        self.seq += 1;
+
         let tokens = tokenize(doc.body.as_str());
 
         let mut data: HashMap<usize, Vec<usize>> = HashMap::new();
@@ -237,11 +240,8 @@ impl IndexWriter {
         }
     }
 
-    fn build(mut self) -> PositionalIndex {
+    fn build(self) -> PositionalIndex {
         let mut index = PositionalIndex::new();
-
-        // Note: document id should be sorted.
-        self.term_positions.sort();
 
         for (doc_id, idx, positions) in self.term_positions {
             let term = self.term_dict.term(idx).unwrap();
@@ -261,7 +261,7 @@ fn search_term(index: &PositionalIndex, term: &Term) -> Vec<usize> {
     posting_list.postings.iter().map(|p| p.doc_id).collect()
 }
 
-pub fn search_main(docs: &[Document], term: &Term) -> Vec<usize> {
+pub fn search_main(docs: Vec<Document>, term: &Term) -> Vec<usize> {
     let mut index_writer = IndexWriter::new();
     for doc in docs {
         index_writer.write(doc);
@@ -340,12 +340,11 @@ mod tests {
     #[test]
     fn indexing_test() {
         let mut index_writer = IndexWriter::new();
-        index_writer.write(&doc!("I am Taisuke", 1));
-        index_writer.write(&doc!(
-            "that that is is that that is not is not is that it it is",
-            2
+        index_writer.write(doc!("What is this"));
+        index_writer.write(doc!("I am Taisuke"));
+        index_writer.write(doc!(
+            "that that is is that that is not is not is that it it is"
         ));
-        index_writer.write(&doc!("What is this", 0));
 
         let index = index! {
             "I" => posting! { 1 => vec![0] },
@@ -415,18 +414,17 @@ mod tests {
     #[test]
     fn search_term_test() {
         let mut iw = IndexWriter::new();
-        iw.write(&doc!("I am Taisuke", 1));
-        iw.write(&doc!(
-            "that that is is that that is not is not is that it it is",
-            2
+        iw.write(doc!("I am Taisuke"));
+        iw.write(doc!(
+            "that that is is that that is not is not is that it it is"
         ));
         let index = iw.build();
 
         let term = "Taisuke".to_string();
-        assert_eq!(search_term(&index, &term), vec![1]);
+        assert_eq!(search_term(&index, &term), vec![0]);
 
         let term = "that".to_string();
-        assert_eq!(search_term(&index, &term), vec![2]);
+        assert_eq!(search_term(&index, &term), vec![1]);
 
         let term = "foo".to_string();
         assert_eq!(search_term(&index, &term), vec![]);
@@ -435,19 +433,16 @@ mod tests {
     #[test]
     fn search_main_test() {
         let sentences = vec![
-            doc!("I am Taisuke", 1),
-            doc!(
-                "that that is is that that is not is not is that it it is",
-                2
-            ),
+            doc!("I am Taisuke"),
+            doc!("that that is is that that is not is not is that it it is"),
         ];
         let term = "Taisuke".to_string();
-        assert_eq!(search_main(&sentences, &term), vec![1]);
+        assert_eq!(search_main(sentences.clone(), &term), vec![0]);
 
         let term = "that".to_string();
-        assert_eq!(search_main(&sentences, &term), vec![2]);
+        assert_eq!(search_main(sentences.clone(), &term), vec![1]);
 
         let term = "foo".to_string();
-        assert_eq!(search_main(&sentences, &term), vec![]);
+        assert_eq!(search_main(sentences.clone(), &term), vec![]);
     }
 }

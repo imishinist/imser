@@ -15,12 +15,8 @@ fn main() {
     let term = argv[1].clone();
     let sentences = &argv[2..];
 
-    let mut docs = Vec::new();
-    for (id, sentence) in sentences.iter().enumerate() {
-        docs.push(doc!(sentence.as_str(), id));
-    }
-
-    let doc_ids = imser::search_main(&docs, &term);
+    let docs = sentences.iter().map(|s| doc!(s.as_str())).collect();
+    let doc_ids = imser::search_main(docs, &term);
     if doc_ids.is_empty() {
         eprintln!("term not found: {}", &term);
     }
