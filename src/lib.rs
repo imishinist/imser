@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
@@ -114,16 +115,55 @@ macro_rules! doc {
 type Term = String;
 
 #[derive(Debug, PartialEq)]
+struct TermFreq {
+    term_count: usize,
+    terms: HashMap<Term, usize>,
+}
+
+impl TermFreq {
+    fn new() -> Self {
+        Self {
+            term_count: 0,
+            terms: HashMap::new(),
+        }
+    }
+
+    fn put_term(&mut self, term: Term, term_count: usize) {
+        self.term_count += term_count;
+        self.terms.insert(term, term_count);
+    }
+
+    fn tf(&self, term: &Term) -> f32 {
+        let term_freq = match self.terms.get(term) {
+            None => 0,
+            Some(freq) => *freq,
+        };
+
+        (term_freq as f32) / (self.term_count as f32)
+    }
+}
+
+#[derive(Debug, PartialEq)]
 struct PositionalIndex {
+    doc_count: usize,
+
+    // Term to PostingList mapping
     postings: HashMap<Term, PostingList>,
+
+    // doc_id => Document mapping
     stored: HashMap<usize, Document>,
+
+    // doc_id => TermFreq mapping
+    term_freq: HashMap<usize, TermFreq>,
 }
 
 impl PositionalIndex {
-    fn new() -> Self {
+    fn new(doc_count: usize) -> Self {
         PositionalIndex {
+            doc_count,
             postings: HashMap::new(),
             stored: HashMap::new(),
+            term_freq: HashMap::new(),
         }
     }
 
@@ -133,12 +173,36 @@ impl PositionalIndex {
         posting_list.push(posting);
     }
 
+    fn push_term_freq(&mut self, id: usize, term: Term, term_count: usize) {
+        self.term_freq
+            .entry(id)
+            .or_insert_with(TermFreq::new)
+            .put_term(term, term_count);
+    }
+
     fn store_document(&mut self, id: usize, doc: Document) {
         self.stored.insert(id, doc);
     }
 
     fn doc(&self, id: usize) -> Option<&Document> {
         self.stored.get(&id)
+    }
+
+    fn idf(&self, term: &Term) -> f32 {
+        let term_doc_count = match self.postings.get(term) {
+            None => 0,
+            Some(pl) => pl.postings.len(),
+        } + 1;
+        ((self.doc_count as f32) / (term_doc_count as f32))
+            .log2()
+            .max(0f32)
+    }
+
+    fn tf(&self, doc_id: usize, term: &Term) -> f32 {
+        match self.term_freq.get(&doc_id) {
+            None => 0f32,
+            Some(term_freq) => term_freq.tf(term),
+        }
     }
 }
 
@@ -255,10 +319,11 @@ impl IndexWriter {
     }
 
     fn build(self) -> PositionalIndex {
-        let mut index = PositionalIndex::new();
+        let mut index = PositionalIndex::new(self.seq);
 
         for (doc_id, idx, positions) in self.term_positions {
             let term = self.term_dict.term(idx).unwrap();
+            index.push_term_freq(doc_id, term.clone(), positions.len());
             index.push_posting(term.clone(), PostingData { doc_id, positions });
         }
 
@@ -270,13 +335,64 @@ impl IndexWriter {
     }
 }
 
+#[derive(Debug, PartialEq)]
+struct DocAndScore {
+    score: f32,
+    doc_id: usize,
+}
+
+impl DocAndScore {
+    fn new_with_score(doc_id: usize, score: f32) -> Self {
+        Self { doc_id, score }
+    }
+
+    fn score_cmp(&self, other: &Self) -> Ordering {
+        let sub = self.score - other.score;
+        if sub.abs() <= f32::EPSILON {
+            return Ordering::Equal;
+        }
+        // self > score
+        if sub > 0f32 {
+            Ordering::Greater
+        } else {
+            Ordering::Less
+        }
+    }
+}
+
+impl Eq for DocAndScore {}
+
+impl PartialOrd<Self> for DocAndScore {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.score
+            .partial_cmp(&other.score)
+            .map(|f| f.then_with(|| self.doc_id.cmp(&other.doc_id)))
+    }
+}
+
+impl Ord for DocAndScore {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.score_cmp(other)
+            .then_with(|| self.doc_id.cmp(&other.doc_id).reverse())
+    }
+}
+
 fn search_term(index: &PositionalIndex, term: &Term) -> Vec<usize> {
     let posting_list = match index.postings.get(term.as_str()) {
         None => return Vec::new(),
         Some(posting_list) => posting_list,
     };
 
-    posting_list.postings.iter().map(|p| p.doc_id).collect()
+    let idf = index.idf(term);
+
+    let mut docs_scores: Vec<DocAndScore> = posting_list
+        .postings
+        .iter()
+        .map(|pl| DocAndScore::new_with_score(pl.doc_id, index.tf(pl.doc_id, term) * idf))
+        .collect();
+    docs_scores.sort();
+
+    docs_scores.into_iter().map(|ds| ds.doc_id).collect()
 }
 
 pub fn search_main(docs: Vec<Document>, term: &Term) -> Vec<Document> {
@@ -344,6 +460,33 @@ mod tests {
         let term = "pen".to_string();
         assert_eq!(term_dict.index(&term), Some(3));
         assert_eq!(term_dict.term(3), Some(&term));
+    }
+
+    #[test]
+    fn tfidf_test() {
+        let mut index_writer = IndexWriter::new();
+        index_writer.write(doc!("dog dog dog monkey bird"));
+        index_writer.write(doc!("dog cat cat fox"));
+        index_writer.write(doc!("dog raccoon fox"));
+        let index = index_writer.build();
+
+        let term = "dog".to_string();
+        assert_eq!(index.idf(&term), 0f32);
+        assert_eq!(index.tf(0, &term), 0.6);
+        assert_eq!(index.tf(1, &term), 0.25);
+        assert_eq!(index.tf(2, &term), 1f32 / 3f32);
+
+        let term = "bird".to_string();
+        assert_eq!(index.idf(&term), 0.5849625007f32);
+        assert_eq!(index.tf(0, &term), 0.2);
+        assert_eq!(index.tf(1, &term), 0f32);
+        assert_eq!(index.tf(2, &term), 0f32);
+
+        let term = "fox".to_string();
+        assert_eq!(index.idf(&term), 0f32);
+        assert_eq!(index.tf(0, &term), 0f32);
+        assert_eq!(index.tf(1, &term), 0.25);
+        assert_eq!(index.tf(2, &term), 1f32 / 3f32);
     }
 
     #[test]
@@ -430,6 +573,21 @@ mod tests {
                 Token::new_punct("?", 11, 4),
             ]
         );
+    }
+
+    #[test]
+    fn tfidf_term_search_test() {
+        let mut index_writer = IndexWriter::new();
+        index_writer.write(doc!("dog dog dog monkey bird"));
+        index_writer.write(doc!("dog cat cat fox"));
+        index_writer.write(doc!("dog raccoon fox"));
+        let index = index_writer.build();
+
+        let term = "dog".to_string();
+        assert_eq!(search_term(&index, &term), vec![0, 1, 2]);
+
+        let term = "fox".to_string();
+        assert_eq!(search_term(&index, &term), vec![1, 2]);
     }
 
     #[test]
