@@ -44,49 +44,50 @@ impl Token {
 fn tokenize(sentence: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
 
+    // term.len() returns size of bytes
     let mut term = String::new();
-    let mut base = 0;
+    let mut base_offset = 0;
     let mut word_count = 0;
     for c in sentence.chars() {
         if c.is_whitespace() {
             if !term.is_empty() {
                 tokens.push(Token::new_term(
                     term.as_str(),
-                    base - term.len(),
+                    base_offset - term.len(),
                     word_count,
                 ));
                 term.clear();
                 word_count += 1;
             }
 
-            base += 1;
+            base_offset += c.len_utf8();
             continue;
         }
         if c.is_ascii_punctuation() {
             tokens.push(Token::new_term(
                 term.as_str(),
-                base - term.len(),
+                base_offset - term.len(),
                 word_count,
             ));
             term.clear();
             word_count += 1;
 
             term.push(c);
-            tokens.push(Token::new_punct(term.as_str(), base, word_count));
+            tokens.push(Token::new_punct(term.as_str(), base_offset, word_count));
             term.clear();
             word_count += 1;
 
-            base += 1;
+            base_offset += c.len_utf8();
             continue;
         }
 
-        base += 1;
+        base_offset += c.len_utf8();
         term.push(c);
     }
     if !term.is_empty() {
         tokens.push(Token::new_term(
             term.as_str(),
-            base - term.len(),
+            base_offset - term.len(),
             word_count,
         ));
     }
@@ -571,6 +572,20 @@ mod tests {
                 Token::new_term("s", 5, 2),
                 Token::new_term("that", 7, 3),
                 Token::new_punct("?", 11, 4),
+            ]
+        );
+
+        let sentence = "すもも も もも も もも の うち";
+        assert_eq!(
+            tokenize(sentence),
+            vec![
+                Token::new_term("すもも", 0, 0),
+                Token::new_term("も", 10, 1),
+                Token::new_term("もも", 14, 2),
+                Token::new_term("も", 21, 3),
+                Token::new_term("もも", 25, 4),
+                Token::new_term("の", 32, 5),
+                Token::new_term("うち", 36, 6),
             ]
         );
     }
