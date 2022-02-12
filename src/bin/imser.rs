@@ -1,6 +1,6 @@
 #[macro_use]
 extern crate imser;
-use imser::Document;
+use imser::{Document, TokenizeType};
 
 use std::env;
 use std::process;
@@ -16,7 +16,7 @@ fn main() {
     let sentences = &argv[2..];
 
     let docs = sentences.iter().map(|s| doc!(s.as_str())).collect();
-    let docs = imser::search_main(docs, &term);
+    let docs = imser::search_main(TokenizeType::Whitespace, docs, &term);
     if docs.is_empty() {
         eprintln!("term not found: {}", &term);
     }

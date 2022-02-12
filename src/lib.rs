@@ -43,7 +43,18 @@ impl Token {
     }
 }
 
-#[allow(dead_code)]
+#[derive(Debug)]
+pub enum TokenizeType {
+    Whitespace,
+    Japanese,
+}
+
+impl Default for TokenizeType {
+    fn default() -> Self {
+        TokenizeType::Whitespace
+    }
+}
+
 fn japanese_tokenize(sentence: &str) -> Vec<Token> {
     let mut tokenizer = Tokenizer::with_config(TokenizerConfig {
         dict_path: None,
@@ -305,6 +316,11 @@ impl TermDict {
     }
 }
 
+#[derive(Debug, Default)]
+struct IndexWriterConfig {
+    pub tokenize_type: TokenizeType,
+}
+
 #[derive(Debug)]
 struct IndexWriter {
     seq: usize,
@@ -316,15 +332,25 @@ struct IndexWriter {
 
     // (doc_id, Document)
     stored: Vec<(usize, Document)>,
+
+    tokenize_type: TokenizeType,
 }
 
 impl IndexWriter {
-    fn new() -> Self {
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        IndexWriter::with_config(IndexWriterConfig {
+            ..Default::default()
+        })
+    }
+
+    pub fn with_config(config: IndexWriterConfig) -> Self {
         Self {
             seq: 0,
             term_dict: TermDict::new(),
             term_positions: Vec::new(),
             stored: Vec::new(),
+            tokenize_type: config.tokenize_type,
         }
     }
 
@@ -336,7 +362,10 @@ impl IndexWriter {
 
     fn write(&mut self, doc: Document) {
         let id = self.seq_incr();
-        let tokens = whitespace_tokenize(doc.body.as_str());
+        let tokens = match self.tokenize_type {
+            TokenizeType::Whitespace => whitespace_tokenize(doc.body.as_str()),
+            TokenizeType::Japanese => japanese_tokenize(doc.body.as_str()),
+        };
 
         let mut data: HashMap<usize, Vec<usize>> = HashMap::new();
         for token in tokens {
@@ -434,8 +463,8 @@ fn search_term(index: &PositionalIndex, term: &Term) -> Vec<usize> {
     docs_scores.into_iter().map(|ds| ds.doc_id).collect()
 }
 
-pub fn search_main(docs: Vec<Document>, term: &Term) -> Vec<Document> {
-    let mut index_writer = IndexWriter::new();
+pub fn search_main(tokenize_type: TokenizeType, docs: Vec<Document>, term: &Term) -> Vec<Document> {
+    let mut index_writer = IndexWriter::with_config(IndexWriterConfig { tokenize_type });
     for doc in docs {
         index_writer.write(doc);
     }
@@ -451,7 +480,7 @@ pub fn search_main(docs: Vec<Document>, term: &Term) -> Vec<Document> {
 mod tests {
     use crate::{
         japanese_tokenize, search_main, search_term, whitespace_tokenize, IndexWriter, TermDict,
-        Token,
+        Token, TokenizeType,
     };
 
     macro_rules! map (
@@ -748,19 +777,34 @@ mod tests {
         ];
         let term = "Taisuke".to_string();
         assert_eq!(
-            search_main(sentences.clone(), &term),
+            search_main(TokenizeType::Whitespace, sentences.clone(), &term),
             vec![doc!("I am Taisuke"),]
         );
 
         let term = "that".to_string();
         assert_eq!(
-            search_main(sentences.clone(), &term),
+            search_main(TokenizeType::Whitespace, sentences.clone(), &term),
             vec![doc!(
                 "that that is is that that is not is not is that it it is"
             ),]
         );
 
         let term = "foo".to_string();
-        assert_eq!(search_main(sentences.clone(), &term), vec![]);
+        assert_eq!(
+            search_main(TokenizeType::Whitespace, sentences.clone(), &term),
+            vec![]
+        );
+
+        let sentences = vec![
+            doc!("すもももももももものうち"),
+            doc!("関西国際空港限定トートバッグ"),
+            doc!("東京国際空港"),
+        ];
+
+        let term = "すもも".to_string();
+        assert_eq!(
+            search_main(TokenizeType::Japanese, sentences.clone(), &term),
+            vec![doc!("すもももももももものうち"),]
+        );
     }
 }
