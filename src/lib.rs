@@ -4,14 +4,14 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
-enum TokenKind {
-    Term(String),
-    Punct(String),
+enum TokenKind<'a> {
+    Term(&'a str),
+    Punct(&'a str),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Token {
-    kind: TokenKind,
+pub struct Token<'a> {
+    kind: TokenKind<'a>,
 
     // offset to the beginning of the word
     offset: usize,
@@ -23,19 +23,19 @@ pub struct Token {
     position: usize,
 }
 
-impl Token {
-    fn new_term(term: &str, offset: usize, position: usize) -> Self {
+impl<'a> Token<'a> {
+    fn new_term(term: &'a str, offset: usize, position: usize) -> Self {
         Self {
-            kind: TokenKind::Term(term.to_string()),
+            kind: TokenKind::Term(term),
             offset,
             length: term.len(),
             position,
         }
     }
 
-    fn new_punct(punct: &str, offset: usize, position: usize) -> Self {
+    fn new_punct(punct: &'a str, offset: usize, position: usize) -> Self {
         Self {
-            kind: TokenKind::Punct(punct.to_string()),
+            kind: TokenKind::Punct(punct),
             offset,
             length: punct.len(),
             position,
@@ -93,19 +93,18 @@ fn japanese_tokenize(sentence: &str) -> Vec<Token> {
 fn whitespace_tokenize(sentence: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
 
-    // term.len() returns size of bytes
-    let mut term = String::new();
+    let mut length = 0;
     let mut base_offset = 0;
     let mut word_count = 0;
     for c in sentence.chars() {
         if c.is_whitespace() {
-            if !term.is_empty() {
+            if length > 0 {
                 tokens.push(Token::new_term(
-                    term.as_str(),
-                    base_offset - term.len(),
+                    &sentence[base_offset - length..base_offset],
+                    base_offset - length,
                     word_count,
                 ));
-                term.clear();
+                length = 0;
                 word_count += 1;
             }
 
@@ -114,16 +113,18 @@ fn whitespace_tokenize(sentence: &str) -> Vec<Token> {
         }
         if c.is_ascii_punctuation() {
             tokens.push(Token::new_term(
-                term.as_str(),
-                base_offset - term.len(),
+                &sentence[base_offset - length..base_offset],
+                base_offset - length,
                 word_count,
             ));
-            term.clear();
             word_count += 1;
 
-            term.push(c);
-            tokens.push(Token::new_punct(term.as_str(), base_offset, word_count));
-            term.clear();
+            tokens.push(Token::new_punct(
+                &sentence[base_offset..base_offset + c.len_utf8()],
+                base_offset,
+                word_count,
+            ));
+            length = 0;
             word_count += 1;
 
             base_offset += c.len_utf8();
@@ -131,12 +132,12 @@ fn whitespace_tokenize(sentence: &str) -> Vec<Token> {
         }
 
         base_offset += c.len_utf8();
-        term.push(c);
+        length += c.len_utf8();
     }
-    if !term.is_empty() {
+    if length > 0 {
         tokens.push(Token::new_term(
-            term.as_str(),
-            base_offset - term.len(),
+            &sentence[base_offset - length..base_offset],
+            base_offset - length,
             word_count,
         ));
     }
