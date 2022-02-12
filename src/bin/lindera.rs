@@ -12,13 +12,31 @@ fn main() {
     })
     .unwrap();
 
-    let sentences = ["関西国際空港限定トートバッグ", "すもももももももものうち"];
+    let sentences = [
+        "関西国際空港限定トートバッグ",
+        "すもももももももものうち",
+        "大変でした。　そうですね。",
+        "赤い",
+        "静かだ",
+        "見て",
+        "見えない",
+        "ゆっくり",
+        "大きな",
+        "そして",
+        "あら",
+    ];
 
     for sentence in sentences {
         let tokens = tokenizer.tokenize(sentence).unwrap();
         println!("sentence={:?}", sentence);
         for token in tokens {
-            println!("token={:?}, len={}", token.text, token.text.len());
+            println!(
+                "token={:?}, detail={:?},len={}, len={}",
+                token.text,
+                token.detail,
+                token.detail.len(),
+                token.text.len()
+            );
         }
         println!();
     }
