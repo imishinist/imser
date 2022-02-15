@@ -2,6 +2,7 @@ mod doc;
 mod token;
 
 pub use doc::Document;
+use std::cmp;
 pub use token::TokenizeType;
 
 use doc::*;
@@ -263,36 +264,40 @@ impl MultiTermQuery {
 }
 
 struct DocIterator<'a> {
-    posting_lists: Vec<Peekable<Iter<'a, PostingData>>>,
-
+    cursors: Vec<Peekable<Iter<'a, PostingData>>>,
     next_doc: Option<usize>,
 }
 
 impl<'a> DocIterator<'a> {
     fn new(query: &MultiTermQuery, index: &'a PositionalIndex) -> Self {
-        let mut posting_lists = Vec::with_capacity(query.terms.len());
-        let mut next_doc = None;
+        let (cursors, next_doc) = Self::build_cursors(query, index);
+        Self { cursors, next_doc }
+    }
 
-        let mut have_none = false;
+    fn build_cursors(
+        query: &MultiTermQuery,
+        index: &'a PositionalIndex,
+    ) -> (Vec<Peekable<Iter<'a, PostingData>>>, Option<usize>) {
+        let mut cursors = Vec::with_capacity(query.terms.len());
+        let mut next_doc = None;
         for term in query.terms.iter() {
             match index.postings.get(term) {
-                None => have_none = true,
                 Some(pl) => {
-                    let mut postings = pl.postings.iter().peekable();
-                    if have_none {
-                        next_doc = None;
-                    } else {
-                        next_doc = postings.peek().map(|pd| pd.doc_id);
-                    }
-                    posting_lists.push(postings);
+                    let mut cursor = pl.postings.iter().peekable();
+                    let peek = cursor.peek();
+                    assert!(peek.is_some(), "posting list is not empty when term exist");
+
+                    // search start from biggest document id
+                    next_doc = next_doc.max(peek.map(|pd| pd.doc_id));
+                    cursors.push(cursor);
+                }
+                None => {
+                    return (Vec::with_capacity(0), None);
                 }
             }
         }
 
-        Self {
-            posting_lists,
-            next_doc,
-        }
+        (cursors, next_doc)
     }
 }
 
@@ -300,19 +305,22 @@ impl<'a> Iterator for DocIterator<'a> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        'outer: loop {
+        loop {
             let target = self.next_doc?;
-            for pl in self.posting_lists.iter_mut() {
-                // skip until target > posting.doc_id
-                while pl.next_if(|posting| target > posting.doc_id).is_some() {}
-            }
 
-            for pl in self.posting_lists.iter_mut() {
+            let mut max_doc = target;
+            for pl in self.cursors.iter_mut() {
+                // skip until posting.doc_id < target
+                // Note: this is naive implementation
+                while pl.next_if(|posting| posting.doc_id < target).is_some() {}
+
+                // if a pointer reached at the end, nothing matches
                 let posting = pl.peek()?;
-                if posting.doc_id != target {
-                    self.next_doc.replace(posting.doc_id);
-                    continue 'outer;
-                }
+                max_doc = cmp::max(max_doc, posting.doc_id);
+            }
+            if max_doc != target {
+                self.next_doc.replace(max_doc);
+                continue;
             }
             self.next_doc.replace(target + 1);
             return Some(target);
