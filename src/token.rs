@@ -53,7 +53,7 @@ impl Default for TokenizeType {
     }
 }
 
-pub fn japanese_tokenize(sentence: &str) -> Vec<Token> {
+fn japanese_tokenize(sentence: &str) -> Vec<Token> {
     let mut tokenizer = Tokenizer::with_config(TokenizerConfig {
         dict_path: None,
         user_dict_path: None,
@@ -88,7 +88,7 @@ pub fn japanese_tokenize(sentence: &str) -> Vec<Token> {
     ret
 }
 
-pub fn whitespace_tokenize(sentence: &str) -> Vec<Token> {
+fn whitespace_tokenize(sentence: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
 
     let mut length = 0;
@@ -143,16 +143,23 @@ pub fn whitespace_tokenize(sentence: &str) -> Vec<Token> {
     tokens
 }
 
+pub fn tokenize(tokenize_type: TokenizeType, sentence: &str) -> Vec<Token> {
+    match tokenize_type {
+        TokenizeType::Japanese => japanese_tokenize(sentence),
+        TokenizeType::Whitespace => whitespace_tokenize(sentence),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{japanese_tokenize, whitespace_tokenize, Token};
+    use crate::{tokenize, Token, TokenizeType};
 
     #[test]
     fn japanese_tokenize_test() {
-        assert_eq!(japanese_tokenize(""), vec![]);
+        assert_eq!(tokenize(TokenizeType::Japanese, ""), vec![]);
 
         assert_eq!(
-            japanese_tokenize("関西国際空港限定トートバッグ"),
+            tokenize(TokenizeType::Japanese, "関西国際空港限定トートバッグ"),
             vec![
                 Token::new_term("関西", 0, 0),
                 Token::new_term("国際", 6, 1),
@@ -163,7 +170,7 @@ mod tests {
         );
 
         assert_eq!(
-            japanese_tokenize("すもももももももものうち"),
+            tokenize(TokenizeType::Japanese, "すもももももももものうち"),
             vec![
                 Token::new_term("すもも", 0, 0),
                 Token::new_term("も", 9, 1),
@@ -177,47 +184,47 @@ mod tests {
 
         // 動詞
         assert_eq!(
-            japanese_tokenize("好き"),
+            tokenize(TokenizeType::Japanese, "好き"),
             vec![Token::new_term("好き", 0, 0)]
         );
         // 形容詞
         assert_eq!(
-            japanese_tokenize("赤い"),
+            tokenize(TokenizeType::Japanese, "赤い"),
             vec![Token::new_term("赤い", 0, 0)]
         );
         // 形容動詞
         assert_eq!(
-            japanese_tokenize("静かだ"),
+            tokenize(TokenizeType::Japanese, "静かだ"),
             vec![Token::new_term("静か", 0, 0), Token::new_term("だ", 6, 1)]
         );
         // 助詞
         assert_eq!(
-            japanese_tokenize("見て"),
+            tokenize(TokenizeType::Japanese, "見て"),
             vec![Token::new_term("見", 0, 0), Token::new_term("て", 3, 1)]
         );
         // 助動詞
         assert_eq!(
-            japanese_tokenize("見えない"),
+            tokenize(TokenizeType::Japanese, "見えない"),
             vec![Token::new_term("見え", 0, 0), Token::new_term("ない", 6, 1)]
         );
         // 副詞
         assert_eq!(
-            japanese_tokenize("ゆっくり"),
+            tokenize(TokenizeType::Japanese, "ゆっくり"),
             vec![Token::new_term("ゆっくり", 0, 0)]
         );
         // 連体詞
         assert_eq!(
-            japanese_tokenize("大きな"),
+            tokenize(TokenizeType::Japanese, "大きな"),
             vec![Token::new_term("大きな", 0, 0)]
         );
         // 接続詞
         assert_eq!(
-            japanese_tokenize("そして"),
+            tokenize(TokenizeType::Japanese, "そして"),
             vec![Token::new_term("そして", 0, 0)]
         );
         // 感動詞
         assert_eq!(
-            japanese_tokenize("あら"),
+            tokenize(TokenizeType::Japanese, "あら"),
             vec![Token::new_term("あら", 0, 0)]
         );
     }
@@ -225,12 +232,12 @@ mod tests {
     #[test]
     fn whitespace_tokenize_test() {
         let sentence = "".to_string();
-        assert_eq!(whitespace_tokenize(&sentence), vec![]);
+        assert_eq!(tokenize(TokenizeType::Whitespace, &sentence), vec![]);
 
         let sentence = "I am  Taisuke".to_string();
 
         assert_eq!(
-            whitespace_tokenize(&sentence),
+            tokenize(TokenizeType::Whitespace, &sentence),
             vec![
                 Token::new_term("I", 0, 0),
                 Token::new_term("am", 2, 1),
@@ -240,7 +247,7 @@ mod tests {
 
         let sentence = "I am Taisuke.".to_string();
         assert_eq!(
-            whitespace_tokenize(&sentence),
+            tokenize(TokenizeType::Whitespace, &sentence),
             vec![
                 Token::new_term("I", 0, 0),
                 Token::new_term("am", 2, 1),
@@ -251,7 +258,7 @@ mod tests {
 
         let sentence = "What is that?".to_string();
         assert_eq!(
-            whitespace_tokenize(&sentence),
+            tokenize(TokenizeType::Whitespace, &sentence),
             vec![
                 Token::new_term("What", 0, 0),
                 Token::new_term("is", 5, 1),
@@ -262,7 +269,7 @@ mod tests {
 
         let sentence = "What's that?".to_string();
         assert_eq!(
-            whitespace_tokenize(&sentence),
+            tokenize(TokenizeType::Whitespace, &sentence),
             vec![
                 Token::new_term("What", 0, 0),
                 Token::new_punct("'", 4, 1),
@@ -274,7 +281,7 @@ mod tests {
 
         let sentence = "すもも も もも も もも の うち";
         assert_eq!(
-            whitespace_tokenize(sentence),
+            tokenize(TokenizeType::Whitespace, sentence),
             vec![
                 Token::new_term("すもも", 0, 0),
                 Token::new_term("も", 10, 1),

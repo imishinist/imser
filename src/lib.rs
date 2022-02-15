@@ -210,10 +210,7 @@ impl IndexWriter {
 
     fn write(&mut self, doc: Document) {
         let id = self.seq_incr();
-        let tokens = match self.tokenize_type {
-            TokenizeType::Whitespace => whitespace_tokenize(doc.body.as_str()),
-            TokenizeType::Japanese => japanese_tokenize(doc.body.as_str()),
-        };
+        let tokens = tokenize(self.tokenize_type, doc.body.as_str());
 
         let mut data: HashMap<usize, Vec<usize>> = HashMap::new();
         for token in tokens {
@@ -357,16 +354,13 @@ pub fn search_main(
     }
     let index = index_writer.build();
 
-    let terms = match tokenize_type {
-        TokenizeType::Whitespace => whitespace_tokenize(sentence),
-        TokenizeType::Japanese => japanese_tokenize(sentence),
-    }
-    .iter()
-    .filter_map(|t| match t.kind {
-        TokenKind::Term(term) => Some(term.to_string()),
-        _ => None,
-    })
-    .collect::<Vec<_>>();
+    let terms = tokenize(tokenize_type, sentence)
+        .iter()
+        .filter_map(|t| match t.kind {
+            TokenKind::Term(term) => Some(term.to_string()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let query = MultiTermQuery::new(terms);
 
     search_multi_term(&index, query)
