@@ -6,6 +6,8 @@ pub use token::TokenizeType;
 
 use doc::*;
 use std::collections::HashMap;
+use std::iter::Peekable;
+use std::slice::Iter;
 use token::*;
 
 type Term = String;
@@ -249,6 +251,79 @@ impl IndexWriter {
     }
 }
 
+struct MultiTermQuery {
+    terms: Vec<Term>,
+}
+
+impl MultiTermQuery {
+    fn new(terms: Vec<Term>) -> Self {
+        Self { terms }
+    }
+
+    fn iter<'a>(&self, index: &'a PositionalIndex) -> DocIterator<'a> {
+        DocIterator::new(self, index)
+    }
+}
+
+struct DocIterator<'a> {
+    posting_lists: Vec<Peekable<Iter<'a, PostingData>>>,
+
+    next_doc: Option<usize>,
+}
+
+impl<'a> DocIterator<'a> {
+    fn new(query: &MultiTermQuery, index: &'a PositionalIndex) -> Self {
+        let mut posting_lists = Vec::with_capacity(query.terms.len());
+        let mut next_doc = None;
+
+        let mut have_none = false;
+        for term in query.terms.iter() {
+            match index.postings.get(term) {
+                None => have_none = true,
+                Some(pl) => {
+                    let mut postings = pl.postings.iter().peekable();
+                    if have_none {
+                        next_doc = None;
+                    } else {
+                        next_doc = postings.peek().map(|pd| pd.doc_id);
+                    }
+                    posting_lists.push(postings);
+                }
+            }
+        }
+
+        Self {
+            posting_lists,
+            next_doc,
+        }
+    }
+}
+
+impl<'a> Iterator for DocIterator<'a> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        'outer: loop {
+            let target = self.next_doc?;
+            for pl in self.posting_lists.iter_mut() {
+                // skip until target > posting.doc_id
+                while pl.next_if(|posting| target > posting.doc_id).is_some() {}
+            }
+
+            for pl in self.posting_lists.iter_mut() {
+                let posting = pl.peek()?;
+                if posting.doc_id != target {
+                    self.next_doc.replace(posting.doc_id);
+                    continue 'outer;
+                }
+            }
+            self.next_doc.replace(target + 1);
+            return Some(target);
+        }
+    }
+}
+
+#[allow(dead_code)]
 fn search_term(index: &PositionalIndex, term: &Term) -> Vec<usize> {
     let posting_list = match index.postings.get(term.as_str()) {
         None => return Vec::new(),
@@ -267,14 +342,34 @@ fn search_term(index: &PositionalIndex, term: &Term) -> Vec<usize> {
     docs_scores.into_iter().map(|ds| ds.doc_id).collect()
 }
 
-pub fn search_main(tokenize_type: TokenizeType, docs: Vec<Document>, term: &Term) -> Vec<Document> {
+fn search_multi_term(index: &PositionalIndex, query: MultiTermQuery) -> Vec<usize> {
+    query.iter(index).collect()
+}
+
+pub fn search_main(
+    tokenize_type: TokenizeType,
+    docs: Vec<Document>,
+    sentence: &str,
+) -> Vec<Document> {
     let mut index_writer = IndexWriter::with_config(IndexWriterConfig { tokenize_type });
     for doc in docs {
         index_writer.write(doc);
     }
     let index = index_writer.build();
 
-    search_term(&index, term)
+    let terms = match tokenize_type {
+        TokenizeType::Whitespace => whitespace_tokenize(sentence),
+        TokenizeType::Japanese => japanese_tokenize(sentence),
+    }
+    .iter()
+    .filter_map(|t| match t.kind {
+        TokenKind::Term(term) => Some(term.to_string()),
+        _ => None,
+    })
+    .collect::<Vec<_>>();
+    let query = MultiTermQuery::new(terms);
+
+    search_multi_term(&index, query)
         .iter()
         .map(|id| index.doc(*id).unwrap().clone())
         .collect()
@@ -282,7 +377,49 @@ pub fn search_main(tokenize_type: TokenizeType, docs: Vec<Document>, term: &Term
 
 #[cfg(test)]
 mod tests {
-    use crate::{doc, search_main, search_term, IndexWriter, TermDict, TokenizeType};
+    use crate::{
+        doc, search_main, search_term, IndexWriter, MultiTermQuery, TermDict, TokenizeType,
+    };
+
+    #[test]
+    fn doc_iter_test() {
+        let mut index_writer = IndexWriter::new();
+        index_writer.write(doc!("dog dog dog monkey bird"));
+        index_writer.write(doc!("dog cat cat fox"));
+        index_writer.write(doc!("dog raccoon fox"));
+        let index = index_writer.build();
+
+        // don't exist term
+        let query = MultiTermQuery::new(vec!["mouse".to_string(), "fox".to_string()]);
+        let mut iter = query.iter(&index);
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
+
+        let query = MultiTermQuery::new(vec!["dog".to_string()]);
+        let mut iter = query.iter(&index);
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), Some(2));
+        assert_eq!(iter.next(), None);
+
+        let query = MultiTermQuery::new(vec!["dog".to_string(), "fox".to_string()]);
+        let mut iter = query.iter(&index);
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), Some(2));
+        assert_eq!(iter.next(), None);
+
+        let query = MultiTermQuery::new(vec!["dog".to_string(), "dog".to_string()]);
+        let mut iter = query.iter(&index);
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), Some(2));
+        assert_eq!(iter.next(), None);
+
+        let query = MultiTermQuery::new(vec!["dog".to_string(), "bird".to_string()]);
+        let mut iter = query.iter(&index);
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next(), None);
+    }
 
     macro_rules! map (
         () => {

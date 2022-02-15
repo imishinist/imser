@@ -41,7 +41,7 @@ impl<'a> Token<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum TokenizeType {
     Whitespace,
     Japanese,
